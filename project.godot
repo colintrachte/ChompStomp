@@ -11,12 +11,22 @@ config_version=5
 [application]
 
 config/name="Chomp Stomp"
+run/main_scene="res://scenes/test_worm.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 
+[display]
+
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/stretch/aspect="expand"
+
 [physics]
 
+common/physics_ticks_per_second=30
 3d/physics_engine="Jolt Physics"
+common/physics_interpolation=true
 
 [rendering]
 

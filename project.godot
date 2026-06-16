@@ -11,7 +11,7 @@ config_version=5
 [application]
 
 config/name="Chomp Stomp"
-run/main_scene="res://scenes/test_worm.tscn"
+run/main_scene="res://scenes/worm_builder.tscn"
 config/features=PackedStringArray("4.6", "Mobile")
 config/icon="res://icon.svg"
 

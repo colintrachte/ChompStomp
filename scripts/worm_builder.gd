@@ -1,79 +1,6 @@
 extends Node2D
 
 # =============================================================================
-# Inner class — face overlay drawn on top of the head segment
-# =============================================================================
-class _FaceNode extends Node2D:
-	var fi := 4
-	var h  := 22.0
-
-	func set_face(face_idx: int, half: float) -> void:
-		fi = face_idx; h = half; queue_redraw()
-
-	func _draw() -> void:
-		var c  := Color(0.05, 0.05, 0.05, 0.90)
-		var lw := maxf(h * 0.09, 1.5)
-		match fi:
-			0: _smile(c, lw)
-			1: _sleepy(c, lw)
-			2: _surprised(c, lw)
-			3: _cat(c, lw)
-			4: _bunny(c, lw)
-			5: _silly(c, lw)
-
-	func _dot(c: Color, x: float, r: float) -> void:
-		draw_circle(Vector2(x, -h * 0.14), r, c)
-
-	func _smile(c: Color, lw: float) -> void:
-		_dot(c, -h*0.27, h*0.10); _dot(c, h*0.27, h*0.10)
-		var pts := PackedVector2Array()
-		for i in 9:
-			var t := float(i) / 8.0
-			pts.append(Vector2(lerp(-h*0.36, h*0.36, t), h*0.07 + sin(t * PI) * h*0.28))
-		draw_polyline(pts, c, lw, true)
-
-	func _sleepy(c: Color, lw: float) -> void:
-		draw_line(Vector2(-h*0.38,-h*0.12), Vector2(-h*0.14,-h*0.12), c, lw, true)
-		draw_line(Vector2( h*0.14,-h*0.12), Vector2( h*0.38,-h*0.12), c, lw, true)
-		draw_line(Vector2(-h*0.18, h*0.22), Vector2( h*0.18, h*0.22), c, lw*0.6, true)
-
-	func _surprised(c: Color, lw: float) -> void:
-		draw_arc(Vector2(-h*0.26,-h*0.14), h*0.13, 0.0, TAU, 12, c, lw, true)
-		draw_arc(Vector2( h*0.26,-h*0.14), h*0.13, 0.0, TAU, 12, c, lw, true)
-		draw_arc(Vector2(0, h*0.26), h*0.16, 0.0, TAU, 12, c, lw, true)
-
-	func _cat(c: Color, lw: float) -> void:
-		_dot(c, -h*0.27, h*0.09); _dot(c, h*0.27, h*0.09)
-		draw_circle(Vector2(0, h*0.10), h*0.07, c)
-		for s: float in [-1.0, 1.0]:
-			draw_line(Vector2(s*h*0.06, h*0.14), Vector2(s*h*0.52, h*0.07), c, lw*0.8, true)
-			draw_line(Vector2(s*h*0.06, h*0.21), Vector2(s*h*0.52, h*0.28), c, lw*0.8, true)
-
-	func _bunny(c: Color, lw: float) -> void:
-		for s: float in [-1.0, 1.0]:
-			var ep := PackedVector2Array()
-			for i in 14:
-				var a := TAU * i / 14.0
-				ep.append(Vector2(s*h*0.26 + cos(a)*h*0.14, -h*0.65 + sin(a)*h*0.38))
-			draw_colored_polygon(ep, c)
-			var ip := PackedVector2Array()
-			for i in 14:
-				var a := TAU * i / 14.0
-				ip.append(Vector2(s*h*0.26 + cos(a)*h*0.08, -h*0.65 + sin(a)*h*0.26))
-			draw_colored_polygon(ip, Color(0.95, 0.58, 0.70, 0.9))
-		_dot(c, -h*0.27, h*0.09); _dot(c, h*0.27, h*0.09)
-
-	func _silly(c: Color, lw: float) -> void:
-		_dot(c, -h*0.27, h*0.10)
-		draw_arc(Vector2(h*0.27,-h*0.12), h*0.14, 0.0, TAU, 12, c, lw, true)
-		var tp := PackedVector2Array()
-		for i in 12:
-			var a := TAU * i / 12.0
-			tp.append(Vector2(cos(a)*h*0.18, h*0.40 + sin(a)*h*0.22))
-		draw_colored_polygon(tp, Color(0.95, 0.28, 0.28, 0.92))
-
-
-# =============================================================================
 # Inner class — body type icon silhouette
 # =============================================================================
 class _BodyIcon extends Node2D:
@@ -147,7 +74,7 @@ var _sel_seg := 0
 var _seg_layer  : Node2D
 var _seg_polys  : Array[Polygon2D] = []
 var _sel_ring   : Polygon2D
-var _face_node  : _FaceNode
+var _face_node  : FaceNode
 
 # --- Highlight nodes needing refresh ---
 var _shape_rings : Array[Polygon2D] = []
@@ -178,20 +105,21 @@ func _ready() -> void:
 	_rx     = _vp.x * 0.727          # ~930 @ 1280
 	_cx     = (_lx + _rx) * 0.5
 	_worm_y = _vp.y * 0.44
-	_bsz    = minf(_vp.x * 0.040, 56.0)
+	_bsz    = _vp.x * 0.040
 
 	_data = [WormData.load_or_default(0), WormData.load_or_default(1)]
 	_sel_seg = 0
 
 	_setup_sounds()
 
-	_seg_layer = Node2D.new()
-	add_child(_seg_layer)
-
 	_build_panels()
 	_build_left()
 	_build_center()
 	_build_right()
+
+	_seg_layer = Node2D.new()
+	add_child(_seg_layer)
+
 	_rebuild_worm()
 
 
@@ -246,17 +174,18 @@ func _build_panels() -> void:
 
 func _build_left() -> void:
 	var pcx   := _lx * 0.5
-	var rows  := 7
+	var rows  := 8
 	var gap   := (_vp.y * 0.80) / float(rows)
-	var half  := minf(gap * 0.38, 30.0)
-	var y0    := _vp.y * 0.10
+	var half  := minf(gap * 0.38, 28.0)
+	var y0    := _vp.y * 0.08
 
 	for si in rows:
-		var cy := y0 + si * gap
+		var cy      := y0 + si * gap
+		var unlocked := WormData.is_shape_unlocked(si)
 		var icon := Polygon2D.new()
 		icon.polygon = WormData.shape_verts(si, half)
 		icon.position = Vector2(pcx, cy)
-		icon.color    = Color(0.58, 0.65, 0.56)
+		icon.color    = Color(0.58, 0.65, 0.56) if unlocked else Color(0.28, 0.30, 0.28)
 		add_child(icon)
 
 		var ring := Polygon2D.new()
@@ -265,6 +194,14 @@ func _build_left() -> void:
 		ring.color    = Color(1.0, 0.92, 0.0, 0.0)
 		add_child(ring)
 		_shape_rings.append(ring)
+
+		# Padlock indicator on locked shapes
+		if not unlocked:
+			var lock := Polygon2D.new()
+			lock.polygon  = WormData.shape_verts(4, half * 0.36)  # small pentagon badge
+			lock.position = Vector2(pcx + half * 0.72, cy - half * 0.72)
+			lock.color    = Color(0.85, 0.72, 0.12)
+			add_child(lock)
 
 		var hit_r  := Rect2(0, cy - gap * 0.5, _lx, gap)
 		var si_cap := si
@@ -349,7 +286,7 @@ func _build_right() -> void:
 		var bg_circ := _make_circle(Vector2(pcx, cy), fhalf * 1.15, Color(0.22, 0.28, 0.22))
 		add_child(bg_circ)
 
-		var face := _FaceNode.new()
+		var face := FaceNode.new()
 		face.set_face(fi, fhalf)
 		face.position = Vector2(pcx, cy)
 		add_child(face)
@@ -419,7 +356,7 @@ func _rebuild_worm() -> void:
 		_seg_polys.append(poly)
 
 		if i == 0:
-			_face_node = _FaceNode.new()
+			_face_node = FaceNode.new()
 			_face_node.set_face(_data[_kid].face_idx, h)
 			poly.add_child(_face_node)
 
@@ -440,12 +377,21 @@ func _seg_world_pos(i: int) -> Vector2:
 	var h        := _seg_display_half()
 	var spacing  := h * 2.15
 	var total_w  := spacing * float(count - 1)
-	return Vector2(_cx - total_w * 0.5 + float(i) * spacing, _worm_y)
+	var x        := _cx - total_w * 0.5 + float(i) * spacing
+	var y        := _worm_y + sin(float(i) * 0.62) * h * 0.55   # gentle S-curve
+	return Vector2(x, y)
 
 
 func _sync_seg_positions() -> void:
-	for i in _seg_polys.size():
+	var count := _seg_polys.size()
+	for i in count:
 		_seg_polys[i].position = _seg_world_pos(i)
+		# Rotate each segment to face the next one (matches in-game orientation)
+		if i < count - 1:
+			var dir := _seg_world_pos(i + 1) - _seg_world_pos(i)
+			_seg_polys[i].rotation = dir.angle()
+		elif count > 1:
+			_seg_polys[i].rotation = _seg_polys[i - 1].rotation
 
 
 func _refresh_sel_ring() -> void:
@@ -513,6 +459,9 @@ func _on_color(ci: int) -> void:
 
 
 func _on_shape(si: int) -> void:
+	if not WormData.is_shape_unlocked(si):
+		_play("locked")
+		return
 	_data[_kid].segments[_sel_seg]["si"] = si
 	var h := _seg_display_half()
 	_seg_polys[_sel_seg].polygon = WormData.shape_verts(si, h)
@@ -571,6 +520,9 @@ func _on_kid(ki: int) -> void:
 
 func _on_play() -> void:
 	_auto_save()
+	var f := FileAccess.open("user://current_kid.txt", FileAccess.WRITE)
+	if f:
+		f.store_string(str(_kid))
 	get_tree().change_scene_to_file("res://scenes/test_worm.tscn")
 
 
@@ -594,6 +546,7 @@ func _setup_sounds() -> void:
 		"body":   _wav(330.0, 0.09, 0.40, 0.35),
 		"add":    _chirp(370.0, 620.0, 0.13, 0.42),
 		"rem":    _chirp(620.0, 310.0, 0.13, 0.42),
+		"locked": _wav(180.0, 0.14, 0.28, 1.20),
 	}
 
 func _play(key: String) -> void:

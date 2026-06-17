@@ -74,7 +74,44 @@ static func shape_verts(si: int, half: float) -> PackedVector2Array:
 		4: return _poly(5, half)
 		5: return _triangle(half)
 		6: return _star(half)
+		7: return _cog(half)
 	return _rect(half, half * 0.72)
+
+
+# --- Blueprint persistence ---
+
+static func is_shape_unlocked(si: int) -> bool:
+	if si < 7:
+		return true
+	var path := "user://blueprints.json"
+	if not FileAccess.file_exists(path):
+		return false
+	var f := FileAccess.open(path, FileAccess.READ)
+	if not f:
+		return false
+	var d = JSON.parse_string(f.get_as_text())
+	if not d is Dictionary:
+		return false
+	var shapes = (d as Dictionary).get("shapes", [])
+	return si in shapes
+
+
+static func unlock_shape(si: int) -> void:
+	var path := "user://blueprints.json"
+	var current: Dictionary = {}
+	if FileAccess.file_exists(path):
+		var f := FileAccess.open(path, FileAccess.READ)
+		if f:
+			var d = JSON.parse_string(f.get_as_text())
+			if d is Dictionary:
+				current = d as Dictionary
+	var shapes: Array = current.get("shapes", [])
+	if si not in shapes:
+		shapes.append(si)
+		current["shapes"] = shapes
+		var fw := FileAccess.open(path, FileAccess.WRITE)
+		if fw:
+			fw.store_string(JSON.stringify(current))
 
 static func _rect(w: float, h: float) -> PackedVector2Array:
 	return PackedVector2Array([Vector2(-w,-h), Vector2(w,-h), Vector2(w,h), Vector2(-w,h)])
@@ -106,4 +143,14 @@ static func _star(h: float) -> PackedVector2Array:
 		var a := TAU * i / 10.0 - PI * 0.5
 		var r := h if i % 2 == 0 else inner
 		v.append(Vector2(cos(a) * r, sin(a) * r))
+	return v
+
+
+static func _cog(r: float) -> PackedVector2Array:
+	var v := PackedVector2Array()
+	var teeth := 8
+	for i in teeth * 2:
+		var a  := TAU * float(i) / float(teeth * 2) - PI * 0.5
+		var ri := r if i % 2 == 0 else r * 0.66
+		v.append(Vector2(cos(a) * ri, sin(a) * ri))
 	return v

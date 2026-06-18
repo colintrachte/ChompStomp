@@ -116,6 +116,7 @@ func _ready() -> void:
 	_build_left()
 	_build_center()
 	_build_right()
+	_build_back_btn()
 
 	_seg_layer = Node2D.new()
 	add_child(_seg_layer)
@@ -524,6 +525,31 @@ func _on_play() -> void:
 	if f:
 		f.store_string(str(_kid))
 	get_tree().change_scene_to_file("res://scenes/test_worm.tscn")
+
+
+func _build_back_btn() -> void:
+	var sz := minf(_vp.x * 0.028, 32.0)
+	var px := _lx * 0.18
+	var py := _vp.y * 0.028
+	# Left-pointing chevron arrow
+	var arrow := Polygon2D.new()
+	arrow.polygon = PackedVector2Array([
+		Vector2(sz * 1.1, 0.0),
+		Vector2(0.0, sz * 0.6),
+		Vector2(sz * 1.1, sz * 1.2),
+		Vector2(sz * 1.1, sz * 0.88),
+		Vector2(sz * 0.42, sz * 0.6),
+		Vector2(sz * 1.1, sz * 0.32),
+	])
+	arrow.position = Vector2(px, py)
+	arrow.color    = Color(0.50, 0.60, 0.48, 0.80)
+	add_child(arrow)
+	_add_hit(Rect2(0, 0, _lx, _vp.y * 0.10), func(): _on_back())
+
+
+func _on_back() -> void:
+	_auto_save()
+	get_tree().change_scene_to_file("res://scenes/main_menu.tscn")
 
 
 func _auto_save() -> void:

@@ -55,6 +55,8 @@ var head_radius: float:
 	get: return _h_head
 var is_alive: bool:
 	get: return _alive
+var face_idx: int:
+	get: return _worm_data.face_idx if _worm_data != null else 0
 # Interpolated head position for smooth camera follow
 var head_visual_pos: Vector2:
 	get: return _visuals[0].global_position if not _visuals.is_empty() else _head_pos
@@ -92,7 +94,7 @@ func take_hit() -> void:
 	if not _alive or _invincible_ticks > 0:
 		return
 	if _stage > 0:
-		_invincible_ticks = 45   # 1.5 s invincibility after a hit
+		_invincible_ticks = 67 if face_idx == 1 else 45   # sleepy face: 2.2 s, others: 1.5 s
 		_food_eaten = 0
 		_stage -= 1
 		_apply_stage_consts()
@@ -189,15 +191,15 @@ func _input(event: InputEvent) -> void:
 	if event is InputEventScreenTouch:
 		_touching = event.pressed
 		if event.pressed:
-			_touch_target = event.position
+			_touch_target = get_viewport().canvas_transform.affine_inverse() * event.position
 	elif event is InputEventScreenDrag:
-		_touch_target = event.position
+		_touch_target = get_viewport().canvas_transform.affine_inverse() * event.position
 	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT:
 		_touching = event.pressed
 		if event.pressed:
-			_touch_target = event.position
+			_touch_target = get_global_mouse_position()
 	elif event is InputEventMouseMotion and _touching:
-		_touch_target = event.position
+		_touch_target = get_global_mouse_position()
 
 
 # =============================================================================
@@ -221,10 +223,30 @@ func _rebuild_visuals() -> void:
 		_visuals.append(poly)
 
 	for i in _visuals.size():
-		var h := _h_head if i == 0 else _h_body
-		_visuals[i].polygon = _seg_verts(i, h)
-		_visuals[i].color   = _seg_color(i)
+		var h        := _h_head if i == 0 else _h_body
+		var base_col := _seg_color(i)
+
+		# Base layer: smooth circle — circles are large enough to touch/overlap at every stage
+		_visuals[i].polygon = WormData.shape_verts(2, h)   # shape 2 = circle
+		_visuals[i].color   = base_col
 		_clear_deco(_visuals[i])
+
+		# Sticker: kid's chosen shape painted on top of the base circle
+		var sticker := Polygon2D.new()
+		sticker.set_meta("deco", true)
+		sticker.polygon = _sticker_verts(i, h * 0.72)
+		sticker.color   = base_col.darkened(0.24)
+		_visuals[i].add_child(sticker)
+
+		# Highlight: small sheen ellipse offset to upper-left, renders on top of sticker
+		var hl := Polygon2D.new()
+		hl.set_meta("deco", true)
+		hl.polygon  = WormData._ellipse(h * 0.38, h * 0.28)
+		hl.position = Vector2(-h * 0.28, -h * 0.28)
+		hl.color    = base_col.lightened(0.45)
+		_visuals[i].add_child(hl)
+
+		# Evolution decorations render on top of sticker + highlight
 		if stage["spikes"] and i > 0:
 			_add_spike(_visuals[i], h)
 		if stage["wings"] and i == 0:
@@ -255,7 +277,7 @@ func _update_history(target_segs: int) -> void:
 # Per-segment appearance
 # =============================================================================
 
-func _seg_verts(i: int, half: float) -> PackedVector2Array:
+func _sticker_verts(i: int, half: float) -> PackedVector2Array:
 	if _worm_data == null:
 		return WormData.shape_verts(0, half)
 	var n  := _worm_data.segments.size()
@@ -314,6 +336,18 @@ func _reset_visual_transforms() -> void:
 		for child in v.get_children():
 			if child is CanvasItem:
 				(child as CanvasItem).modulate = Color.WHITE
+
+
+# =============================================================================
+# Eat feedback
+# =============================================================================
+
+func chomp_flash() -> void:
+	if _visuals.is_empty():
+		return
+	var tw := _visuals[0].create_tween()
+	tw.tween_property(_visuals[0], "scale", Vector2(1.38, 1.38), 0.055).set_ease(Tween.EASE_OUT)
+	tw.tween_property(_visuals[0], "scale", Vector2(1.0, 1.0),   0.10 ).set_ease(Tween.EASE_IN)
 
 
 # =============================================================================

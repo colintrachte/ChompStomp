@@ -55,7 +55,9 @@ func _process(delta: float) -> void:
 # =============================================================================
 
 func _move_crumb(delta: float) -> void:
-	if is_instance_valid(_worm) and (_worm.head_pos - position).length_squared() < FLEE_SQ:
+	# Cat face: crumbs only notice the worm at half the normal range (stealth bonus)
+	var flee_sq := (40.0 * 40.0) if (is_instance_valid(_worm) and _worm.face_idx == 3) else FLEE_SQ
+	if is_instance_valid(_worm) and (_worm.head_pos - position).length_squared() < flee_sq:
 		var away := (position - _worm.head_pos).normalized()
 		_vel = away * 120.0
 	elif randf() < 0.025:
@@ -91,6 +93,10 @@ func _move_beetle(delta: float) -> void:
 	if randf() < 0.012:
 		_vel = Vector2.from_angle(randf() * TAU) * 38.0
 	position += _vel * delta
+
+
+func apply_knockback(impulse: Vector2) -> void:
+	_vel = impulse
 
 
 func _drift_home() -> void:

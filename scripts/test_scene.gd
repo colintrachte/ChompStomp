@@ -6,6 +6,9 @@ const SPAWN_MIN    := 500.0
 const SPAWN_MAX    := 850.0
 const DESPAWN_DIST := 1200.0
 
+# Back button lives in screen space (CanvasLayer) — stays put while camera moves
+const _BACK_RECT := Rect2(8, 8, 60, 60)
+
 var _worm  : Worm
 var _foods : Array[Food] = []
 var _pests : Array[Pest] = []
@@ -14,6 +17,16 @@ var _boss  : RoboWormBoss = null
 var _audio : AudioStreamPlayer
 var _boss_spawned := false
 var _stream_timer := 0.0
+
+
+func _input(event: InputEvent) -> void:
+	var sp := Vector2(-1.0, -1.0)
+	if event is InputEventScreenTouch and event.pressed:
+		sp = event.position
+	elif event is InputEventMouseButton and event.button_index == MOUSE_BUTTON_LEFT and event.pressed:
+		sp = event.position
+	if sp.x >= 0.0 and _BACK_RECT.has_point(sp):
+		get_tree().change_scene_to_file("res://scenes/worm_builder.tscn")
 
 
 func _ready() -> void:
@@ -42,6 +55,21 @@ func _ready() -> void:
 		for _j in (pair[1] as int):
 			_spawn_pest(pair[0] as int)
 
+	_build_hud()
+
+
+func _build_hud() -> void:
+	var ui := CanvasLayer.new()
+	add_child(ui)
+	# Back arrow: left-pointing chevron in top-left corner
+	var arrow := Polygon2D.new()
+	arrow.polygon = PackedVector2Array([
+		Vector2(52, 14), Vector2(20, 38), Vector2(52, 62),
+		Vector2(52, 50), Vector2(36, 38), Vector2(52, 26),
+	])
+	arrow.color = Color(0.55, 0.70, 0.50, 0.80)
+	ui.add_child(arrow)
+
 
 func _process(delta: float) -> void:
 	if not _worm.is_alive:
@@ -58,6 +86,21 @@ func _physics_process(_delta: float) -> void:
 
 	var head := _worm.head_pos
 	var hr   := _worm.head_radius
+	var fi   := _worm.face_idx
+
+	# --- Face ability: food magnet (cat=3 weak, bunny=4 medium, silly=5 strong) ---
+	# Matches Chloe's drawing: tongue/silly makes food "bounce back", bunny/cat same idea
+	if fi == 3 or fi == 4 or fi == 5:
+		var magnet_r := 65.0 if fi == 3 else (115.0 if fi == 4 else 145.0)
+		var pull     := 0.50 if fi == 3 else (0.80  if fi == 4 else 1.25 )
+		var magnet_sq := magnet_r * magnet_r
+		for food in _foods:
+			if not is_instance_valid(food) or food.eaten:
+				continue
+			var d := food.global_position - head
+			var dsq := d.length_squared()
+			if dsq > 1.0 and dsq < magnet_sq:
+				food.position -= d.normalized() * pull
 
 	# --- Worm eats food ---
 	var eat_food_sq := pow(hr + Food.EAT_RADIUS, 2.0)
@@ -81,6 +124,7 @@ func _physics_process(_delta: float) -> void:
 		if (head - _boss.tail_pos).length_squared() < tail_sq:
 			_boss.eat_tail_segment()
 			_worm.eat_food(0)
+			_worm.chomp_flash()
 			_play_eat()
 
 		if _boss.is_charging:
@@ -141,9 +185,22 @@ func _eat_food(food: Food) -> void:
 	food.eaten = true
 	_foods.erase(food)
 	_worm.eat_food(food.food_type)
-	food.queue_free()
+	_worm.chomp_flash()
 	_play_eat()
 	call_deferred("_spawn_food")
+
+	# Surprised face: eating food blasts nearby pests outward
+	if _worm.face_idx == 2:
+		var eat_pos := food.global_position
+		for pest in _pests:
+			if not is_instance_valid(pest) or pest.eaten:
+				continue
+			var d := pest.global_position - eat_pos
+			var dsq := d.length_squared()
+			if dsq > 1.0 and dsq < 90.0 * 90.0:
+				pest.apply_knockback(d.normalized() * 110.0)
+
+	food.queue_free()
 
 
 func _spawn_food() -> void:
@@ -163,6 +220,7 @@ func _eat_pest(pest: Pest) -> void:
 	var was_kind := pest.pest_type
 	var was_pos  := pest.global_position
 	_worm.eat_food(0)
+	_worm.chomp_flash()
 	pest.queue_free()
 	_play_eat()
 

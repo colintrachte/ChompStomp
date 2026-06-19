@@ -1,8 +1,6 @@
 class_name ComboEffect
 extends Node2D
 
-const Combos := preload("res://scripts/sim/combos.gd")
-
 # Self-removing visual effect spawned at combo resolution.
 # Uses sprite-frame-style drawn animation (no particles).
 
@@ -81,11 +79,11 @@ func _draw_fire_mass(t: float) -> void:
 func _draw_fire_bounce(t: float) -> void:
 	for i in 5:
 		var ft  := clampf(t - float(i) * 0.07, 0.0, 1.0)
-		var len := lerpf(0.0, 90.0, ft) * (1.0 - float(i) * 0.18)
+		var l := lerpf(0.0, 90.0, ft) * (1.0 - float(i) * 0.18)
 		var a   := (1.0 - ft) - float(i) * 0.18
 		if a <= 0.0:
 			continue
-		draw_line(Vector2(-len, 0.0), Vector2.ZERO,
+		draw_line(Vector2(-l, 0.0), Vector2.ZERO,
 			Color(1.0, lerpf(0.65, 0.12, ft), 0.08, a), lerpf(9.0, 2.0, ft))
 	draw_arc(Vector2.ZERO, lerpf(5.0, 60.0, t), 0.0, TAU, 24,
 		Color(1.0, 0.80, 0.30, 1.0 - t), 4.0, true)

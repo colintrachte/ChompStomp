@@ -1,12 +1,5 @@
 extends Node2D
 
-const Combos       := preload("res://scripts/sim/combos.gd")
-const WeaponPickup := preload("res://scripts/sim/weapon_pickup.gd")
-const BoulderBug   := preload("res://scripts/sim/boulder_bug.gd")
-const Gull         := preload("res://scripts/sim/gull.gd")
-const MagnetMite   := preload("res://scripts/sim/magnet_mite.gd")
-const ComboEffect  := preload("res://scripts/sim/combo_effect.gd")
-
 const FOOD_TARGET    := 10
 const PICKUP_TARGET  := 3
 const PEST_COUNTS    := [[0, 5], [1, 2], [2, 2]]   # Crumb×5, Hopper×2, StinkBeetle×2
@@ -18,6 +11,7 @@ const DESPAWN_DIST   := 1200.0
 const _BACK_RECT := Rect2(8, 8, 60, 60)
 
 var _worm    : Worm
+var _camera  : Camera2D # <-- Add this line
 var _foods   : Array[Food] = []
 var _pests   : Array[Pest] = []
 var _pickups : Array[WeaponPickup] = []
@@ -90,8 +84,10 @@ func _ready() -> void:
 	_worm.evolved.connect(_on_evolved)
 	_worm.worm_defeated.connect(_on_worm_defeated)
 
-	var cam := Camera2D.new()
-	_worm.attach_camera(cam)
+	# Instantiate camera independently in the world
+	_camera = Camera2D.new()
+	_camera.global_position = _worm.head_pos
+	add_child(_camera)
 
 	for _i in FOOD_TARGET:
 		_spawn_food()
@@ -126,6 +122,10 @@ func _build_hud() -> void:
 
 
 func _process(delta: float) -> void:
+	# Update camera position to follow smooth visual movement
+	if is_instance_valid(_camera) and is_instance_valid(_worm) and _worm.is_alive:
+		_camera.global_position = _worm.head_visual_pos
+
 	if not _worm.is_alive:
 		return
 	_stream_timer += delta
@@ -275,19 +275,18 @@ func _physics_process(delta: float) -> void:
 			var dp := mp - pickup.global_position
 			if dp.length_squared() < msq and dp.length_squared() > 1.0:
 				pickup.position += dp.normalized() * 0.65
-
-	# --- Gull: worm intercepts it before it escapes ---
+# --- Gull: worm intercepts it before it escapes ---
 	var gull_sq := pow(hr + Gull.EAT_RADIUS, 2.0)
-	for gull in _gulls.duplicate():
+	var next_gulls: Array[Gull] = []
+	for gull in _gulls:
 		if not is_instance_valid(gull):
-			_gulls.erase(gull); continue
+			continue
 		if gull.eaten:
-			_gulls.erase(gull)
 			gull.queue_free()
 			continue
+		
 		if (head - gull.global_position).length_squared() < gull_sq:
 			gull.eaten = true
-			_gulls.erase(gull)
 			_worm.eat_food(0)
 			_worm.chomp_flash()
 			_play_eat()
@@ -296,25 +295,24 @@ func _physics_process(delta: float) -> void:
 			add_child(drop)
 			_foods.append(drop)
 			gull.queue_free()
+		else:
+			next_gulls.append(gull)
+	_gulls = next_gulls
 
 	# --- Boulder Bug: eat from behind; armored front knocks back ---
 	var bbug_sq := pow(hr + BoulderBug.EAT_RADIUS, 2.0)
-	for bbug: BoulderBug in _bbugs.duplicate():
+	var next_bbugs: Array[BoulderBug] = []
+	for bbug in _bbugs:
 		if not is_instance_valid(bbug):
-			_bbugs.erase(bbug)
 			continue
-
 		if bbug.eaten:
-			_bbugs.erase(bbug)
 			bbug.queue_free()
 			continue
 
 		if (head - bbug.global_position).length_squared() < bbug_sq:
 			var to_bug: Vector2 = (bbug.global_position - head).normalized()
-
 			if to_bug.dot(bbug.facing) > 0.30:
 				bbug.eaten = true
-				_bbugs.erase(bbug)
 				_worm.eat_food(0)
 				_worm.eat_food(0)
 				_worm.chomp_flash()
@@ -323,85 +321,109 @@ func _physics_process(delta: float) -> void:
 			else:
 				_worm.take_hit()
 				_play_hit()
+				next_bbugs.append(bbug)
+		else:
+			next_bbugs.append(bbug)
+	_bbugs = next_bbugs
 
 	# --- Magnet Mite: worm eats it → scatter hoard ---
 	var mite_sq := pow(hr + MagnetMite.EAT_RADIUS, 2.0)
-	for mite in _mmites.duplicate():
+	var next_mmites: Array[MagnetMite] = []
+	for mite in _mmites:
 		if not is_instance_valid(mite):
-			_mmites.erase(mite); continue
+			continue
 		if mite.eaten:
-			_mmites.erase(mite)
 			mite.queue_free()
 			continue
+
 		if (head - mite.global_position).length_squared() < mite_sq:
 			mite.eaten = true
-			_mmites.erase(mite)
 			_worm.eat_food(0)
 			_worm.chomp_flash()
 			_play_eat()
 			_scatter_around(mite.global_position, MagnetMite.MAGNET_RADIUS)
 			mite.queue_free()
-
+		else:
+			next_mmites.append(mite)
+	_mmites = next_mmites
 	# --- Stink clouds hit worm ---
 	var cloud_sq := StinkCloud.RADIUS * StinkCloud.RADIUS
-	for cloud in _clouds.duplicate():
-		if not is_instance_valid(cloud):
-			_clouds.erase(cloud)
-			continue
-		if (head - cloud.global_position).length_squared() < cloud_sq:
-			_worm.sneeze()
-
+	var next_clouds: Array[StinkCloud] = []
+	for cloud in _clouds:
+		if is_instance_valid(cloud):
+			if (head - cloud.global_position).length_squared() < cloud_sq:
+				_worm.sneeze()
+			next_clouds.append(cloud)
+	_clouds = next_clouds
 
 # =============================================================================
 # Streaming: despawn distant items, replenish near worm
 # =============================================================================
-
 func _stream_world() -> void:
 	var head       := _worm.head_pos
 	var despawn_sq := DESPAWN_DIST * DESPAWN_DIST
 
-	for food in _foods.duplicate():
-		if not is_instance_valid(food):
-			_foods.erase(food)
-			continue
-		if (head - food.global_position).length_squared() > despawn_sq:
-			_foods.erase(food)
-			food.queue_free()
+	# --- Filter Foods ---
+	var next_foods: Array[Food] = []
+	for food in _foods:
+		if is_instance_valid(food):
+			if (head - food.global_position).length_squared() > despawn_sq:
+				food.queue_free()
+			else:
+				next_foods.append(food)
+	_foods = next_foods
 
-	for pest in _pests.duplicate():
-		if not is_instance_valid(pest):
-			_pests.erase(pest)
-			continue
-		if (head - pest.global_position).length_squared() > despawn_sq:
-			_pests.erase(pest)
-			pest.queue_free()
+	# --- Filter Pests ---
+	var next_pests: Array[Pest] = []
+	for pest in _pests:
+		if is_instance_valid(pest):
+			if (head - pest.global_position).length_squared() > despawn_sq:
+				pest.queue_free()
+			else:
+				next_pests.append(pest)
+	_pests = next_pests
 
-	for pickup in _pickups.duplicate():
-		if not is_instance_valid(pickup):
-			_pickups.erase(pickup)
-			continue
-		if (head - pickup.global_position).length_squared() > despawn_sq:
-			_pickups.erase(pickup)
-			pickup.queue_free()
+	# --- Filter Pickups ---
+	var next_pickups: Array[WeaponPickup] = []
+	for pickup in _pickups:
+		if is_instance_valid(pickup):
+			if (head - pickup.global_position).length_squared() > despawn_sq:
+				pickup.queue_free()
+			else:
+				next_pickups.append(pickup)
+	_pickups = next_pickups
 
-	for gull in _gulls.duplicate():
-		if not is_instance_valid(gull):
-			_gulls.erase(gull); continue
-		if (head - gull.global_position).length_squared() > despawn_sq:
-			_gulls.erase(gull); gull.queue_free()
+	# --- Filter Gulls ---
+	var next_gulls: Array[Gull] = []
+	for gull in _gulls:
+		if is_instance_valid(gull):
+			if (head - gull.global_position).length_squared() > despawn_sq:
+				gull.queue_free()
+			else:
+				next_gulls.append(gull)
+	_gulls = next_gulls
 
-	for bbug in _bbugs.duplicate():
-		if not is_instance_valid(bbug):
-			_bbugs.erase(bbug); continue
-		if (head - bbug.global_position).length_squared() > despawn_sq:
-			_bbugs.erase(bbug); bbug.queue_free()
+	# --- Filter Boulder Bugs ---
+	var next_bbugs: Array[BoulderBug] = []
+	for bbug in _bbugs:
+		if is_instance_valid(bbug):
+			if (head - bbug.global_position).length_squared() > despawn_sq:
+				bbug.queue_free()
+			else:
+				next_bbugs.append(bbug)
+	_bbugs = next_bbugs
 
-	for mite in _mmites.duplicate():
-		if not is_instance_valid(mite):
-			_mmites.erase(mite); continue
-		if (head - mite.global_position).length_squared() > despawn_sq:
-			_mmites.erase(mite); mite.queue_free()
+	# --- Filter Magnet Mites ---
+	var next_mmites: Array[MagnetMite] = []
+	for mite in _mmites:
+		if is_instance_valid(mite):
+			if (head - mite.global_position).length_squared() > despawn_sq:
+				mite.queue_free()
+			else:
+				next_mmites.append(mite)
+	_mmites = next_mmites
 
+	# --- Replenish Items ---
 	while _foods.size() < FOOD_TARGET:
 		_spawn_food()
 
@@ -413,7 +435,16 @@ func _stream_world() -> void:
 
 	while _pickups.size() < PICKUP_TARGET:
 		_spawn_pickup(randi() % 4)
-
+		
+	# --- Filter Stink Clouds ---
+	var next_clouds: Array[StinkCloud] = []
+	for cloud in _clouds:
+		if is_instance_valid(cloud):
+			if (head - cloud.global_position).length_squared() > despawn_sq:
+				cloud.queue_free()
+			else:
+				next_clouds.append(cloud)
+	_clouds = next_clouds
 
 # =============================================================================
 # Weapon pickup management
@@ -641,8 +672,10 @@ func _on_worm_defeated() -> void:
 	_play_hit()
 	var respawn_pos := _worm.head_pos
 	get_tree().create_timer(0.6).timeout.connect(func():
-		_worm.respawn(respawn_pos), CONNECT_ONE_SHOT
-	)
+		_worm.respawn(respawn_pos)
+		if is_instance_valid(_camera):
+			_camera.global_position = respawn_pos
+	, CONNECT_ONE_SHOT)
 
 
 # =============================================================================

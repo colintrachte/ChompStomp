@@ -1,8 +1,6 @@
 extends Node2D
 class_name Worm
 
-const Combos := preload("res://scripts/sim/combos.gd")
-
 signal evolved(new_stage: int)
 signal worm_defeated
 
@@ -220,12 +218,6 @@ func _sync_visuals() -> void:
 		var seg_dir  := _history[idx] - _history[prev_idx]
 		if seg_dir.length_squared() > 0.5:
 			_visuals[i].rotation = seg_dir.angle()
-
-
-func attach_camera(cam: Camera2D) -> void:
-	if not _visuals.is_empty():
-		_visuals[0].add_child(cam)
-
 
 # =============================================================================
 # Input

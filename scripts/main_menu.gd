@@ -124,7 +124,7 @@ func _draw_arena_card(idx: int, locked: bool) -> void:
 	else:
 		border_col = Color(0.22, 0.85, 0.30, 0.85) if fmod(_t, 1.6) < 1.3 else Color(0.50, 1.00, 0.55, 0.85)
 	var bw := 4.0
-	draw_line(pos,                              pos + Vector2(sz.x, 0),    border_col, bw)
+	draw_line(pos,                               pos + Vector2(sz.x, 0),    border_col, bw)
 	draw_line(pos + Vector2(sz.x, 0),           pos + sz,                  border_col, bw)
 	draw_line(pos + sz,                         pos + Vector2(0, sz.y),    border_col, bw)
 	draw_line(pos + Vector2(0, sz.y),           pos,                       border_col, bw)
@@ -140,28 +140,53 @@ func _draw_arena_card(idx: int, locked: bool) -> void:
 	# Card name label at the bottom
 	var font    := ThemeDB.fallback_font
 	var name_fs := int(sz.x * 0.095)
-	var name    := "GREEN HILL" if idx == 0 else "COMING SOON"
+	var menuitemname    := "GREEN HILL" if idx == 0 else "COMING SOON"
 	var name_col := Color(1.0, 1.0, 0.90, 0.88 * dim)
 	draw_string(font, pos + Vector2(0.0, sz.y * 0.97),
-		name, HORIZONTAL_ALIGNMENT_CENTER, sz.x, name_fs, name_col)
-
+		menuitemname, HORIZONTAL_ALIGNMENT_CENTER, sz.x, name_fs, name_col)
 
 func _draw_green_hill_scene(pos: Vector2, sz: Vector2, dim: float) -> void:
 	# Sky
 	draw_rect(Rect2(pos, sz), Color(0.35, 0.62, 0.90, dim))
+
+	# Define the strict bounding box of the card as a polygon
+	var card_box := PackedVector2Array([
+		pos,
+		pos + Vector2(sz.x, 0),
+		pos + sz,
+		pos + Vector2(0, sz.y)
+	])
 
 	# Rolling hills — two overlapping ellipses
 	var hill_y := pos.y + sz.y * 0.60
 	var _draw_hill := func(hx: float, hw: float, hh: float, col: Color) -> void:
 		var pts := PackedVector2Array()
 		var steps := 20
+		
+		# 1. Generate the curved top of the hill
 		for i in steps + 1:
 			var t  := float(i) / float(steps)
 			var a  := PI + t * PI
 			pts.append(pos + Vector2(hx + cos(a) * hw, hill_y + sin(a) * hh))
-		pts.append(pos + Vector2(sz.x, sz.y))
-		pts.append(pos + Vector2(0.0, sz.y))
-		draw_colored_polygon(pts, col)
+		
+		# 2. Complete the shape by dropping far below the card (guarantees coverage)
+		pts.append(pos + Vector2(sz.x * 2.0, sz.y * 2.0))
+		pts.append(pos + Vector2(-sz.x * 2.0, sz.y * 2.0))
+		
+		# 3. Intersect the hill with the card box. This cleanly chops off 
+		# anything outside the card, removing self-intersections.
+		var clipped_polygons := Geometry2D.intersect_polygons(pts, card_box)
+		
+		# 4. Draw the safely clipped polygon parts
+		for poly in clipped_polygons:
+			var indices := Geometry2D.triangulate_polygon(poly)
+			if indices.is_empty():
+				# If triangulation still fails for some reason, draw it raw
+				draw_colored_polygon(poly, col)
+			else:
+				for i in range(0, indices.size(), 3):
+					var tri := PackedVector2Array([poly[indices[i]], poly[indices[i+1]], poly[indices[i+2]]])
+					draw_colored_polygon(tri, col)
 
 	_draw_hill.call(sz.x * 0.30, sz.x * 0.40, sz.y * 0.28, Color(0.12, 0.65, 0.18, dim))
 	_draw_hill.call(sz.x * 0.72, sz.x * 0.38, sz.y * 0.32, Color(0.08, 0.55, 0.14, dim))
@@ -180,12 +205,11 @@ func _draw_green_hill_scene(pos: Vector2, sz: Vector2, dim: float) -> void:
 		var bc := wc + Vector2(float(i) * 10.0, sin(float(i) * 0.8) * 4.0)
 		draw_circle(bc, 5.5, Color(0.22, 0.47, 1.00, dim))
 
-
 func _draw_volcano_scene(pos: Vector2, sz: Vector2, dim: float) -> void:
 	# Sky: dark orange-red dusk
 	draw_rect(Rect2(pos, sz), Color(0.28, 0.12, 0.08, dim))
 
-	# Volcano cone
+	# Volcano cone (3 points = inherently convex, no triangulation needed)
 	draw_colored_polygon(PackedVector2Array([
 		pos + Vector2(sz.x * 0.50, sz.y * 0.18),
 		pos + Vector2(sz.x * 0.80, sz.y * 0.80),

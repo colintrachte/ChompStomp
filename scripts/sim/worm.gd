@@ -1,6 +1,8 @@
 extends Node2D
 class_name Worm
 
+const Combos := preload("res://scripts/sim/combos.gd")
+
 signal evolved(new_stage: int)
 signal worm_defeated
 
@@ -31,6 +33,12 @@ var _alive           := true
 var _invincible_ticks := 0   # brief invincibility + flash after a hit
 var _sneeze_ticks     := 0   # random wobble when worm sneezes
 
+# --- Combo tag state ---
+var _active_tag      := 0        # Combos.NONE = 0
+var _tag_timer       := 0.0      # seconds until the loaded tag expires
+var _speed_mul       := 1.0      # temporary multiplier from combo effects
+var _speed_mul_timer := 0.0
+
 # --- Motion state ---
 var _head_pos  : Vector2
 var _direction : Vector2 = Vector2.RIGHT
@@ -60,6 +68,8 @@ var face_idx: int:
 # Interpolated head position for smooth camera follow
 var head_visual_pos: Vector2:
 	get: return _visuals[0].global_position if not _visuals.is_empty() else _head_pos
+var active_tag: int:
+	get: return _active_tag
 
 
 # =============================================================================
@@ -115,6 +125,10 @@ func respawn(pos: Vector2) -> void:
 	_food_eaten   = 0
 	_invincible_ticks = 60   # 2 s invincibility on respawn
 	_sneeze_ticks = 0
+	_active_tag      = 0
+	_tag_timer       = 0.0
+	_speed_mul       = 1.0
+	_speed_mul_timer = 0.0
 	_head_pos     = pos
 	_direction    = Vector2.RIGHT
 	_history.fill(pos)
@@ -125,11 +139,28 @@ func respawn(pos: Vector2) -> void:
 	set_physics_process(true)
 
 
+func load_tag(tag: int) -> void:
+	_active_tag = tag
+	_tag_timer  = Combos.TAG_WINDOW
+	_update_tag_tint()
+
+
+func clear_tag() -> void:
+	_active_tag = 0
+	_tag_timer  = 0.0
+	_clear_tag_tint()
+
+
+func apply_speed_boost(mul: float, duration: float) -> void:
+	_speed_mul       = mul
+	_speed_mul_timer = duration
+
+
 # =============================================================================
 # Physics loop
 # =============================================================================
 
-func _physics_process(_delta: float) -> void:
+func _physics_process(delta: float) -> void:
 	if not _alive or _visuals.is_empty():
 		return
 	if _invincible_ticks > 0:
@@ -137,6 +168,19 @@ func _physics_process(_delta: float) -> void:
 		visible = (_invincible_ticks % 6) >= 3
 	elif not visible:
 		visible = true
+
+	if _tag_timer > 0.0:
+		_tag_timer -= delta
+		if _tag_timer <= 0.0:
+			_clear_tag_tint()
+		else:
+			_update_tag_tint()
+
+	if _speed_mul_timer > 0.0:
+		_speed_mul_timer -= delta
+		if _speed_mul_timer <= 0.0:
+			_speed_mul = 1.0
+
 	_steer()
 	_advance()
 	_sync_visuals()
@@ -159,7 +203,7 @@ func _steer() -> void:
 
 
 func _advance() -> void:
-	_head_pos += _direction * _speed
+	_head_pos += _direction * _speed * _speed_mul
 	_history.push_front(_head_pos)
 	if _history.size() > _max_history:
 		_history.resize(_max_history)
@@ -217,6 +261,17 @@ func _rebuild_visuals() -> void:
 	var stage: Dictionary = STAGES[_stage]
 	var target_segs := stage["segs"] as int
 
+	if _face_node != null and is_instance_valid(_face_node):
+		var fp := _face_node.get_parent()
+		if fp != null:
+			fp.remove_child(_face_node)
+
+	# Remove excess segments left over from a higher stage
+	while _visuals.size() > target_segs:
+		var old: Polygon2D = _visuals.pop_back()
+		_clear_deco(old)
+		old.queue_free()
+
 	while _visuals.size() < target_segs:
 		var poly := Polygon2D.new()
 		add_child(poly)
@@ -256,6 +311,7 @@ func _rebuild_visuals() -> void:
 		if _face_node == null:
 			_face_node         = FaceNode.new()
 			_face_node.z_index = 5
+		if _face_node.get_parent() == null:
 			_visuals[0].add_child(_face_node)
 		_face_node.set_face(_worm_data.face_idx, _h_head)
 
@@ -263,6 +319,8 @@ func _rebuild_visuals() -> void:
 	_sync_visuals()
 	for v in _visuals:
 		v.reset_physics_interpolation()
+	if _active_tag != 0 and _tag_timer > 0.0:
+		_update_tag_tint()
 
 
 func _update_history(target_segs: int) -> void:
@@ -271,6 +329,7 @@ func _update_history(target_segs: int) -> void:
 	while _history.size() < _max_history:
 		_history.append(tail)
 	_history.resize(_max_history)
+	_history.fill(tail)
 
 
 # =============================================================================
@@ -329,6 +388,21 @@ func _add_wings(head_poly: Polygon2D, half: float) -> void:
 		head_poly.add_child(wing)
 
 
+func _update_tag_tint() -> void:
+	var tc    := Combos.tag_color(_active_tag)
+	var pulse := 0.55 + sin(_tag_timer * 10.0) * 0.22
+	var mod   := Color.WHITE.lerp(tc, pulse)
+	for v in _visuals:
+		v.modulate = mod
+
+
+func _clear_tag_tint() -> void:
+	_active_tag = 0
+	_tag_timer  = 0.0
+	for v in _visuals:
+		v.modulate = Color.WHITE
+
+
 func _reset_visual_transforms() -> void:
 	for v in _visuals:
 		v.modulate = Color.WHITE
@@ -355,6 +429,7 @@ func chomp_flash() -> void:
 # =============================================================================
 
 func _trigger_loss() -> void:
+	set_physics_process(false)
 	if randi() % 2 == 0:
 		_loss_scattered_beads()
 	else:

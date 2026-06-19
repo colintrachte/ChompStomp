@@ -54,6 +54,33 @@ class _BodyIcon extends Node2D:
 
 
 # =============================================================================
+# Inner class — section label overlay (draws on top of all Polygon2D children)
+# =============================================================================
+class _LabelLayer extends Node2D:
+	var _vp := Vector2.ZERO
+	var _lx := 0.0
+	var _rx := 0.0
+
+	func _draw() -> void:
+		var font  := ThemeDB.fallback_font
+		var fs    := int(_vp.y * 0.022)
+		var muted := Color(0.55, 0.65, 0.52, 0.72)
+		var pw    := _vp.x - _rx
+
+		draw_string(font, Vector2(0.0,  _vp.y * 0.098), "SHAPE",
+			HORIZONTAL_ALIGNMENT_CENTER, _lx, fs, muted)
+		draw_string(font, Vector2(_rx,  _vp.y * 0.040), "FACE",
+			HORIZONTAL_ALIGNMENT_CENTER, pw, fs, muted)
+		draw_string(font, Vector2(_rx,  _vp.y * 0.558), "COLOR",
+			HORIZONTAL_ALIGNMENT_CENTER, pw, fs, muted)
+		draw_string(font, Vector2(_lx,  _vp.y * 0.808), "BODY",
+			HORIZONTAL_ALIGNMENT_CENTER, _rx - _lx, fs, muted)
+		draw_string(font, Vector2(_lx,  _vp.y * 0.870), "PLAY",
+			HORIZONTAL_ALIGNMENT_CENTER, _rx - _lx, int(_vp.y * 0.030),
+			Color(0.38, 0.92, 0.52, 0.85))
+
+
+# =============================================================================
 # Main builder
 # =============================================================================
 
@@ -116,6 +143,7 @@ func _ready() -> void:
 	_build_left()
 	_build_center()
 	_build_right()
+	_build_labels()
 	_build_back_btn()
 
 	_seg_layer = Node2D.new()
@@ -176,9 +204,9 @@ func _build_panels() -> void:
 func _build_left() -> void:
 	var pcx   := _lx * 0.5
 	var rows  := 8
-	var gap   := (_vp.y * 0.80) / float(rows)
+	var gap   := (_vp.y * 0.78) / float(rows)
 	var half  := minf(gap * 0.38, 28.0)
-	var y0    := _vp.y * 0.08
+	var y0    := _vp.y * 0.13
 
 	for si in rows:
 		var cy      := y0 + si * gap
@@ -254,19 +282,26 @@ func _build_center() -> void:
 		_add_hit(Rect2(icon.position - Vector2(_bsz, _bsz), Vector2(_bsz*2.0, _bsz*2.0)),
 				func(): _on_body(bi_cap))
 
-	# Play button (large triangle)
-	var play_pos := Vector2(_cx, _vp.y * 0.955)
-	var play_sz  := minf(_vp.y * 0.030, 22.0)
+	# Play button — circle background + centered triangle
+	var play_pos := Vector2(_cx, _vp.y * 0.924)
+	var btn_r    := minf(_vp.y * 0.068, 58.0)
+
+	var glow := _make_circle(play_pos, btn_r * 1.30, Color(0.10, 0.62, 0.22, 0.22))
+	add_child(glow)
+	var btn_bg := _make_circle(play_pos, btn_r, Color(0.14, 0.65, 0.25))
+	add_child(btn_bg)
+
+	var tri_h    := btn_r * 0.56
 	var play_tri := Polygon2D.new()
 	play_tri.polygon = PackedVector2Array([
-		Vector2(-play_sz*1.4, -play_sz),
-		Vector2( play_sz*1.4, 0.0),
-		Vector2(-play_sz*1.4,  play_sz),
+		Vector2(-tri_h * 0.75, -tri_h),
+		Vector2( tri_h * 1.00,  0.0),
+		Vector2(-tri_h * 0.75,  tri_h),
 	])
-	play_tri.position = play_pos
-	play_tri.color    = Color(0.18, 0.85, 0.35)
+	play_tri.position = play_pos + Vector2(tri_h * 0.12, 0.0)
+	play_tri.color    = Color.WHITE
 	add_child(play_tri)
-	_add_hit(Rect2(play_pos.x - play_sz*2.0, play_pos.y - play_sz*1.5, play_sz*4.0, play_sz*3.0),
+	_add_hit(Rect2(play_pos.x - btn_r * 1.3, play_pos.y - btn_r * 1.3, btn_r * 2.6, btn_r * 2.6),
 			func(): _on_play())
 
 
@@ -527,11 +562,18 @@ func _on_play() -> void:
 	get_tree().change_scene_to_file("res://scenes/test_worm.tscn")
 
 
+func _build_labels() -> void:
+	var layer := _LabelLayer.new()
+	layer._vp = _vp
+	layer._lx = _lx
+	layer._rx = _rx
+	add_child(layer)
+
+
 func _build_back_btn() -> void:
 	var sz := minf(_vp.x * 0.028, 32.0)
 	var px := _lx * 0.18
 	var py := _vp.y * 0.028
-	# Left-pointing chevron arrow
 	var arrow := Polygon2D.new()
 	arrow.polygon = PackedVector2Array([
 		Vector2(sz * 1.1, 0.0),
@@ -544,7 +586,8 @@ func _build_back_btn() -> void:
 	arrow.position = Vector2(px, py)
 	arrow.color    = Color(0.50, 0.60, 0.48, 0.80)
 	add_child(arrow)
-	_add_hit(Rect2(0, 0, _lx, _vp.y * 0.10), func(): _on_back())
+	# push_front so this hit is checked before shape panel hits in _input
+	_hits.push_front({"r": Rect2(0, 0, _lx, _vp.y * 0.10), "fn": func(): _on_back()})
 
 
 func _on_back() -> void:

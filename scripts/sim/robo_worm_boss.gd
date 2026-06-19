@@ -42,7 +42,7 @@ var head_half: float:
 
 var tail_pos: Vector2:
 	get:
-		if _alive_segs <= 0:
+		if _alive_segs < 0:
 			return Vector2(-99999.0, -99999.0)
 		var idx := mini(_alive_segs * SEG_GAP, _history.size() - 1)
 		return _history[idx]

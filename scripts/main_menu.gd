@@ -1,8 +1,11 @@
 extends Node2D
 
-var _t     := 0.0
-var _vp    := Vector2.ZERO
-var _hits  : Array = []   # [{r: Rect2, fn: Callable}]
+# Arena picker: the kid taps a picture of a place — no text labels on the cards.
+# The picture IS the game mode. Tapping a card goes to the worm builder, then play.
+
+var _t   := 0.0
+var _vp  := Vector2.ZERO
+var _hits: Array = []   # [{r: Rect2, fn: Callable}]
 
 var _palette: Array[Color] = [
 	Color(0.22, 0.47, 1.00), Color(1.00, 0.90, 0.08), Color(0.62, 0.18, 0.85),
@@ -13,42 +16,12 @@ var _palette: Array[Color] = [
 func _ready() -> void:
 	_vp = get_viewport_rect().size
 	RenderingServer.set_default_clear_color(Color(0.05, 0.08, 0.05))
-	_build_ui()
+	_build_hitboxes()
 
 
-func _build_ui() -> void:
-	var cx := _vp.x * 0.5
-
-	# Big play button — lower third of screen
-	var btn_w  := _vp.x * 0.40
-	var btn_h  := _vp.y * 0.18
-	var btn_x  := cx - btn_w * 0.5
-	var btn_y  := _vp.y * 0.68
-
-	var btn := Polygon2D.new()
-	btn.polygon = PackedVector2Array([
-		Vector2(btn_x, btn_y),
-		Vector2(btn_x + btn_w, btn_y),
-		Vector2(btn_x + btn_w, btn_y + btn_h),
-		Vector2(btn_x, btn_y + btn_h),
-	])
-	btn.color = Color(0.14, 0.68, 0.28)
-	add_child(btn)
-
-	# Play triangle inside button
-	var tri_h  := btn_h * 0.50
-	var tri_cx := cx
-	var tri_cy := btn_y + btn_h * 0.5
-	var tri := Polygon2D.new()
-	tri.polygon = PackedVector2Array([
-		Vector2(tri_cx - tri_h * 0.72, tri_cy - tri_h * 0.6),
-		Vector2(tri_cx + tri_h * 0.72, tri_cy),
-		Vector2(tri_cx - tri_h * 0.72, tri_cy + tri_h * 0.6),
-	])
-	tri.color = Color(0.92, 1.00, 0.92)
-	add_child(tri)
-
-	_hits.append({"r": Rect2(btn_x, btn_y, btn_w, btn_h), "fn": Callable(self, "_on_play")})
+func _build_hitboxes() -> void:
+	var card := _card_rect(0)
+	_hits.append({"r": card, "fn": Callable(self, "_on_green_hill")})
 
 
 func _process(delta: float) -> void:
@@ -70,74 +43,162 @@ func _input(event: InputEvent) -> void:
 			return
 
 
-func _on_play() -> void:
+func _on_green_hill() -> void:
 	get_tree().change_scene_to_file("res://scenes/worm_builder.tscn")
 
 
 func _draw() -> void:
-	var vp   := get_viewport_rect().size
-	var cx   := vp.x * 0.5
+	_draw_title()
+	_draw_worm_preview()
+	_draw_arena_card(0, false)   # Green Hill — active
+	_draw_arena_card(1, true)    # Volcano  — locked/coming soon
+
+
+# =============================================================================
+# Layout helpers
+# =============================================================================
+
+func _card_rect(idx: int) -> Rect2:
+	var cw   := _vp.x * 0.40
+	var ch   := _vp.y * 0.42
+	var gap  := _vp.x * 0.06
+	var cy   := _vp.y * 0.50
+	var total_w := cw * 2.0 + gap
+	var cx0  := (_vp.x - total_w) * 0.5
+	return Rect2(cx0 + float(idx) * (cw + gap), cy, cw, ch)
+
+
+# =============================================================================
+# Drawing
+# =============================================================================
+
+func _draw_title() -> void:
 	var font := ThemeDB.fallback_font
-	var fs   := int(vp.x * 0.072)
+	var fs   := int(_vp.x * 0.072)
+	draw_string(font, Vector2(0.0, _vp.y * 0.12),
+		"CHOMP  STOMP", HORIZONTAL_ALIGNMENT_CENTER, _vp.x, fs,
+		Color(1.0, 0.95, 0.30))
+	var sub_fs := int(_vp.x * 0.022)
+	draw_string(font, Vector2(0.0, _vp.y * 0.178),
+		"TAP A WORLD TO START", HORIZONTAL_ALIGNMENT_CENTER, _vp.x, sub_fs,
+		Color(0.78, 0.92, 0.72, 0.60))
 
-	# Title
-	draw_string(font, Vector2(0.0, vp.y * 0.14),
-			"CHOMP  STOMP", HORIZONTAL_ALIGNMENT_CENTER, vp.x, fs,
-			Color(1.0, 0.95, 0.30))
 
-	# Animated worm preview — sinusoidal chain of beads following a wave path
-	var bead_r   := vp.x * 0.025
-	var n_beads  := 10
-	var wave_cx  := cx
-	var wave_cy  := vp.y * 0.42
-	var wave_amp := vp.y * 0.09
-	var wave_w   := vp.x * 0.38
+func _draw_worm_preview() -> void:
+	# Animated worm bead chain — sinusoidal wiggle
+	var bead_r  := _vp.x * 0.022
+	var n       := 10
+	var cx      := _vp.x * 0.5
+	var cy      := _vp.y * 0.32
+	var amp     := _vp.y * 0.055
+	var wave_w  := _vp.x * 0.34
 
-	for i in n_beads:
-		var frac := float(i) / float(n_beads - 1)
-		var bx   := wave_cx - wave_w * 0.5 + frac * wave_w
-		var by   := wave_cy + sin(frac * TAU + _t * 2.2) * wave_amp
-		var ci   := i % _palette.size()
-		var col  := _palette[ci]
-
-		# Base circle
+	for i in n:
+		var frac := float(i) / float(n - 1)
+		var bx   := cx - wave_w * 0.5 + frac * wave_w
+		var by   := cy + sin(frac * TAU + _t * 2.2) * amp
+		var col  := _palette[i % _palette.size()]
 		draw_circle(Vector2(bx, by), bead_r, col)
-		# Sticker: small dark polygon for variety
-		var si := i % 4   # rotate through a few shapes for visual interest
-		var sv := _mini_shape(si, bead_r * 0.60)
-		var verts := PackedVector2Array()
-		for v in sv:
-			verts.append(Vector2(bx, by) + v)
-		draw_colored_polygon(verts, col.darkened(0.28))
-		# Highlight sheen
 		draw_circle(Vector2(bx - bead_r * 0.28, by - bead_r * 0.28),
-				bead_r * 0.36, col.lightened(0.45))
-
-	# "BUILD YOUR WORM" small label above play button
-	draw_string(font, Vector2(0.0, vp.y * 0.64),
-			"BUILD  ·  PLAY", HORIZONTAL_ALIGNMENT_CENTER, vp.x,
-			int(vp.x * 0.026), Color(0.70, 0.82, 0.68, 0.75))
+			bead_r * 0.36, col.lightened(0.42))
 
 
-func _mini_shape(si: int, r: float) -> PackedVector2Array:
-	match si:
-		0:   # rect
-			return PackedVector2Array([
-				Vector2(-r, -r * 0.72), Vector2(r, -r * 0.72),
-				Vector2(r,  r * 0.72), Vector2(-r,  r * 0.72),
-			])
-		1:   # diamond
-			return PackedVector2Array([
-				Vector2(0, -r), Vector2(r * 0.65, 0),
-				Vector2(0,  r), Vector2(-r * 0.65, 0),
-			])
-		2:   # pentagon (5 verts)
-			var v := PackedVector2Array()
-			for j in 5:
-				var a := TAU * j / 5.0 - PI * 0.5
-				v.append(Vector2(cos(a) * r, sin(a) * r))
-			return v
-		_:   # triangle
-			return PackedVector2Array([
-				Vector2(0, -r), Vector2(r * 0.82, r * 0.65), Vector2(-r * 0.82, r * 0.65),
-			])
+func _draw_arena_card(idx: int, locked: bool) -> void:
+	var r   := _card_rect(idx)
+	var pos := r.position
+	var sz  := r.size
+	var dim := 0.38 if locked else 1.0
+
+	# Card background
+	var bg_col := Color(0.10, 0.14, 0.12, dim)
+	draw_rect(r, bg_col)
+
+	match idx:
+		0: _draw_green_hill_scene(pos, sz, dim)
+		1: _draw_volcano_scene(pos, sz, dim)
+
+	# Border — bright green for active, grey for locked
+	var border_col: Color
+	if locked:
+		border_col = Color(0.35, 0.35, 0.38, 0.55)
+	else:
+		border_col = Color(0.22, 0.85, 0.30, 0.85) if fmod(_t, 1.6) < 1.3 else Color(0.50, 1.00, 0.55, 0.85)
+	var bw := 4.0
+	draw_line(pos,                              pos + Vector2(sz.x, 0),    border_col, bw)
+	draw_line(pos + Vector2(sz.x, 0),           pos + sz,                  border_col, bw)
+	draw_line(pos + sz,                         pos + Vector2(0, sz.y),    border_col, bw)
+	draw_line(pos + Vector2(0, sz.y),           pos,                       border_col, bw)
+
+	# Lock icon on the locked card
+	if locked:
+		var lc := pos + sz * 0.5
+		draw_rect(Rect2(lc + Vector2(-sz.x * 0.10, -sz.x * 0.08), Vector2(sz.x * 0.20, sz.x * 0.18)),
+			Color(0.30, 0.28, 0.35, 0.75))
+		var shackle_c := lc + Vector2(0.0, -sz.x * 0.08)
+		draw_arc(shackle_c, sz.x * 0.08, 0.0, PI, 12, Color(0.55, 0.52, 0.58, 0.80), 4.0, true)
+
+	# Card name label at the bottom
+	var font    := ThemeDB.fallback_font
+	var name_fs := int(sz.x * 0.095)
+	var name    := "GREEN HILL" if idx == 0 else "COMING SOON"
+	var name_col := Color(1.0, 1.0, 0.90, 0.88 * dim)
+	draw_string(font, pos + Vector2(0.0, sz.y * 0.97),
+		name, HORIZONTAL_ALIGNMENT_CENTER, sz.x, name_fs, name_col)
+
+
+func _draw_green_hill_scene(pos: Vector2, sz: Vector2, dim: float) -> void:
+	# Sky
+	draw_rect(Rect2(pos, sz), Color(0.35, 0.62, 0.90, dim))
+
+	# Rolling hills — two overlapping ellipses
+	var hill_y := pos.y + sz.y * 0.60
+	var _draw_hill := func(hx: float, hw: float, hh: float, col: Color) -> void:
+		var pts := PackedVector2Array()
+		var steps := 20
+		for i in steps + 1:
+			var t  := float(i) / float(steps)
+			var a  := PI + t * PI
+			pts.append(pos + Vector2(hx + cos(a) * hw, hill_y + sin(a) * hh))
+		pts.append(pos + Vector2(sz.x, sz.y))
+		pts.append(pos + Vector2(0.0, sz.y))
+		draw_colored_polygon(pts, col)
+
+	_draw_hill.call(sz.x * 0.30, sz.x * 0.40, sz.y * 0.28, Color(0.12, 0.65, 0.18, dim))
+	_draw_hill.call(sz.x * 0.72, sz.x * 0.38, sz.y * 0.32, Color(0.08, 0.55, 0.14, dim))
+
+	# Speed pad chevrons in the scene
+	var pad_cx := pos + Vector2(sz.x * 0.42, hill_y - sz.y * 0.10)
+	var col_sp := Color(1.0, 0.92, 0.12, 0.85 * dim)
+	for i in 3:
+		var bx := pad_cx.x + float(i) * 14.0
+		draw_line(Vector2(bx - 8.0, pad_cx.y + 8.0), Vector2(bx, pad_cx.y - 2.0), col_sp, 2.5)
+		draw_line(Vector2(bx + 8.0, pad_cx.y + 8.0), Vector2(bx, pad_cx.y - 2.0), col_sp, 2.5)
+
+	# Tiny worm silhouette
+	var wc := pos + Vector2(sz.x * 0.22, hill_y - sz.y * 0.16)
+	for i in 5:
+		var bc := wc + Vector2(float(i) * 10.0, sin(float(i) * 0.8) * 4.0)
+		draw_circle(bc, 5.5, Color(0.22, 0.47, 1.00, dim))
+
+
+func _draw_volcano_scene(pos: Vector2, sz: Vector2, dim: float) -> void:
+	# Sky: dark orange-red dusk
+	draw_rect(Rect2(pos, sz), Color(0.28, 0.12, 0.08, dim))
+
+	# Volcano cone
+	draw_colored_polygon(PackedVector2Array([
+		pos + Vector2(sz.x * 0.50, sz.y * 0.18),
+		pos + Vector2(sz.x * 0.80, sz.y * 0.80),
+		pos + Vector2(sz.x * 0.20, sz.y * 0.80),
+	]), Color(0.38, 0.22, 0.14, dim))
+
+	# Lava at top
+	draw_circle(pos + Vector2(sz.x * 0.50, sz.y * 0.18), sz.x * 0.07,
+		Color(1.00, 0.45, 0.08, dim))
+
+	# Lava drips
+	for i in 3:
+		var dx := pos.x + sz.x * (0.40 + float(i) * 0.07)
+		var dy := pos.y + sz.y * (0.22 + float(i) * 0.05)
+		draw_line(Vector2(dx, dy - sz.y * 0.04), Vector2(dx, dy + sz.y * 0.06),
+			Color(1.00, 0.55, 0.10, dim), 3.5)

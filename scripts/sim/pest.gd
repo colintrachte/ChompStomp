@@ -11,11 +11,13 @@ const FLEE_SQ    := 80.0 * 80.0
 var pest_type : int  = 0
 var eaten     : bool = false
 var can_eat   : bool = true   # Hoppers set this false mid-jump
+var frozen    : bool = false  # set by GAS combos; movement pauses until timer expires
 
-var _home     : Vector2          # wander centre — pests drift back if they roam too far
-var _worm     : Worm = null
-var _vel      : Vector2 = Vector2.ZERO
-var _time     : float   = 0.0
+var _home      : Vector2          # wander centre — pests drift back if they roam too far
+var _worm      : Worm = null
+var _vel       : Vector2 = Vector2.ZERO
+var _time      : float   = 0.0
+var _freeze_t  : float   = 0.0
 
 # --- Hopper state ---
 var _hop_timer    : float = 0.0
@@ -38,15 +40,25 @@ func setup(pos: Vector2, kind: int, worm: Worm) -> void:
 		2: _vel = Vector2.from_angle(randf() * TAU) * 38.0   # StinkBeetle
 
 
+func freeze_for(duration: float) -> void:
+	frozen   = true
+	_freeze_t = duration
+
+
 func _process(delta: float) -> void:
 	if eaten:
 		return
 	_time += delta
-	match pest_type:
-		0: _move_crumb(delta)
-		1: _move_hopper(delta)
-		2: _move_beetle(delta)
-	_drift_home()
+	if _freeze_t > 0.0:
+		_freeze_t -= delta
+		if _freeze_t <= 0.0:
+			frozen = false
+	if not frozen:
+		match pest_type:
+			0: _move_crumb(delta)
+			1: _move_hopper(delta)
+			2: _move_beetle(delta)
+		_drift_home()
 	queue_redraw()
 
 
@@ -116,6 +128,8 @@ func _draw() -> void:
 		0: _draw_crumb()
 		1: _draw_hopper()
 		2: _draw_beetle()
+	if frozen:
+		draw_arc(Vector2.ZERO, 14.0, 0.0, TAU, 16, Color(0.55, 0.90, 1.00, 0.70), 2.5, true)
 
 
 func _draw_crumb() -> void:
